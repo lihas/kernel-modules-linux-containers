@@ -1,0 +1,50 @@
+--- ../orig/kmod-22.orig/tools/insmod.c
++++ tools/insmod.c
+@@ -29,7 +29,7 @@
+ 
+ #include "kmod.h"
+ 
+-static const char cmdopts_s[] = "psfVh";
++static const char cmdopts_s[] = "psfVhc";
+ static const struct option cmdopts[] = {
+ 	{"version", no_argument, 0, 'V'},
+ 	{"help", no_argument, 0, 'h'},
+@@ -42,7 +42,8 @@
+ 		"\t%s [options] filename [args]\n"
+ 		"Options:\n"
+ 		"\t-V, --version     show version\n"
+-		"\t-h, --help        show this help\n",
++        "\t-h, --help        show this help\n"
++        "\t-c lxc-container : module is being installed from a container\n",//TODO: in later stages remove all modifications from insmod, and auto detect if the insmod is being done from an lxc-container
+ 		program_invocation_short_name);
+ }
+ 
+@@ -81,6 +82,8 @@
+ 		switch (c) {
+ 		case 'p':
+ 		case 's':
++			/* ignored, for compatibility only */
++			break;
+ 		case 'f':
+ 			flags |= KMOD_PROBE_FORCE_MODVERSION;
+ 			flags |= KMOD_PROBE_FORCE_VERMAGIC;
+@@ -92,6 +95,11 @@
+ 			puts(PACKAGE " version " VERSION);
+ 			puts(KMOD_FEATURES);
+ 			return EXIT_SUCCESS;
++		case 'c':
++            printf("flags before %x\n",flags);
++			flags |= MODULE_INIT_LXC; /*sahil - insmod is being run from a container*/
++            printf("flags after %x\n",flags);
++			break;
+ 		case '?':
+ 			return EXIT_FAILURE;
+ 		default:
+@@ -150,6 +158,7 @@
+ 		    mod_strerror(-err));
+ 	}
+ 	kmod_module_unref(mod);
++    printf("flags here %x\n",flags);
+ 
+ end:
+ 	kmod_unref(ctx);

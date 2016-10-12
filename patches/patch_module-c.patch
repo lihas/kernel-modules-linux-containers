@@ -1,0 +1,321 @@
+*** ../linux-4.7.3_unmodified/kernel/module.c	2016-09-07 12:05:12.000000000 +0530
+--- kernel/module.c	2016-10-12 12:11:09.594683448 +0530
+***************
+*** 63,68 ****
+--- 63,75 ----
+  #include <uapi/linux/module.h>
+  #include "module-internal.h"
+  
++ #ifdef CONFIG_LXC_UIO 
++ /*sahil*/
++ #include <linux/uuid.h>
++ #include <linux/module.h>
++ #include <linux/nsproxy.h>
++ #endif
++ 
+  #define CREATE_TRACE_POINTS
+  #include <trace/events/module.h>
+  
+***************
+*** 1868,1874 ****
+  static void frob_text(const struct module_layout *layout,
+  		      int (*set_memory)(unsigned long start, int num_pages))
+  {
+! 	BUG_ON((unsigned long)layout->base & (PAGE_SIZE-1));
+  	BUG_ON((unsigned long)layout->text_size & (PAGE_SIZE-1));
+  	set_memory((unsigned long)layout->base,
+  		   layout->text_size >> PAGE_SHIFT);
+--- 1875,1881 ----
+  static void frob_text(const struct module_layout *layout,
+  		      int (*set_memory)(unsigned long start, int num_pages))
+  {
+! 	BUG_ON((unsigned long)layout->base & (PAGE_SIZE-1)); //checking for page alignment - sahil
+  	BUG_ON((unsigned long)layout->text_size & (PAGE_SIZE-1));
+  	set_memory((unsigned long)layout->base,
+  		   layout->text_size >> PAGE_SHIFT);
+***************
+*** 3252,3257 ****
+--- 3259,3376 ----
+  
+  	return ret;
+  }
++ #ifdef CONFIG_LXC_UIO
++ /*sahil*/
++ 
++ /*
++  * The only thing that can change the capabilities of the current
++  * process is the current process. As such, we can't be in this code
++  * at the same time as we are in the process of setting capabilities
++  * in this process. The net result is that we can limit our use of
++  * locks to when we are reading the caps of another process.
++  */
++ static inline int lxc_uio_cap_get_target_pid(pid_t pid, kernel_cap_t *pEp,
++                                      kernel_cap_t *pIp, kernel_cap_t *pPp)
++ {
++ /* copied from capability.c since there the function was declared as static */
++         int ret;
++ 
++         if (pid && (pid != task_pid_vnr(current))) {
++                 struct task_struct *target;
++ 
++                 rcu_read_lock();
++ 
++                 target = find_task_by_vpid(pid);
++                 if (!target)
++                         ret = -ESRCH;
++                 else
++                         ret = security_capget(target, pEp, pIp, pPp);
++ 
++                 rcu_read_unlock();
++         } else
++                 ret = security_capget(current, pEp, pIp, pPp);
++ 
++         return ret;
++ }
++  
++ 
++ int (*lxc_uio_proxy_put_module)(__uint128_t uuid, struct nsproxy *nsproxy, struct module *module) = NULL; //function pointer - which will be filled by proxy module, when it gets loaded.
++ EXPORT_SYMBOL(lxc_uio_proxy_put_module);
++ 
++ #ifdef CONFIG_LXC_UIO_NO_OPTIMIZE
++ struct nsproxy * __attribute__((optimize("O0"))) lxc_uio_nsproxy_deep_copy(struct nsproxy *nsproxy){
++ #else
++ struct nsproxy * lxc_uio_nsproxy_deep_copy(struct nsproxy *nsproxy){
++ #endif
++ /*
++ WARN: not 100% about implementation of this function.
++ */
++ /*
++ Deep copy is required since the struct has pointers.
++ */
++ /*Much of this code is based on copy_namespaces() from nsproxy.c . That function cannot be used directly
++ since it sets namespace values to current task. Which we don't want. We just need a copy of the
++ namespaces for storing only.
++ */
++ 
++ /*since user_namespace is not a part of ns_proxy, thus it has to be handled differently.*/
++ 	struct 	user_namespace *user_ns = NULL;
++ 	struct nsproxy *new_ns=NULL;
++ 	unsigned long flags=0;
++ 	struct task_struct *tsk=NULL;
++ 	tsk=current;
++ 	user_ns=task_cred_xxx(tsk,user_ns);
++ 	
++ 	flags=CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP;	
++ 	
++ 	new_ns=lxc_uio_create_new_namespaces(flags,tsk,user_ns,tsk->fs);
++ 
++ 	if(IS_ERR(new_ns)){
++ 	
++ 		return NULL;
++ 	}
++ 	else {
++ 		return new_ns;
++ 	}
++ 
++ }
++ 
++ bool lxc_uio_finished_loading(const char *name)
++ {
++ 
++ /*
++ 	Based on finished_loading function defined 
++ 	in this file. This function doesn't consider 
++ 	the module that is being removed (MODULE_STATE_GOING).
++ 	
++ 	return value:-
++ 	true: module found, and is live
++ 	flase: module not found, or is not live
++ */
++         struct module *mod;
++         bool ret;
++ 
++         /*
++          * The module_mutex should not be a heavily contended lock;
++          * if we get the occasional sleep here, we'll go an extra iteration
++          * in the wait_event_interruptible(), which is harmless.
++          */
++         sched_annotate_sleep();
++         mutex_lock(&module_mutex);
++         mod = find_module_all(name, strlen(name), false); //false - since we do not wan't to track unformed modules
++ 	if(mod==NULL){
++ 	//module not found
++ 	ret=false;
++ 	}else{
++ 	//module found, check if it is live
++         ret = (mod->state == MODULE_STATE_LIVE);
++ 	}
++         mutex_unlock(&module_mutex);
++ 
++         return ret;
++ }
++ #endif
++ 
+  
+  /* Call module constructors. */
+  static void do_mod_ctors(struct module *mod)
+***************
+*** 3503,3508 ****
+--- 3622,3635 ----
+  	long err;
+  	char *after_dashes;
+  
++ #ifdef CONFIG_LXC_UIO
++ /*sahil*/	
++ 	__uint128_t lxc_uio_uuid=0;
++ 	bool lxc_uio_flag=false;
++ 	struct nsproxy *lxc_uio_nsproxy=NULL;
++ 	struct module *lxc_uio_module=NULL;
++ #endif
++ 
+  	err = module_sig_check(info, flags);
+  	if (err)
+  		goto free_copy;
+***************
+*** 3623,3628 ****
+--- 3750,3791 ----
+  	/* Done! */
+  	trace_module_load(mod);
+  
++ #ifdef CONFIG_LXC_UIO 
++ /*sahil*/
++ 	if (flags & MODULE_INIT_LXC){
++ 		//check if lxc-proxy module has been loaded or not
++ 		lxc_uio_flag=lxc_uio_finished_loading(CONFIG_LXC_UIO_PROXY_MODULE_NAME);	
++ 		if(lxc_uio_flag==true && lxc_uio_proxy_put_module != NULL){
++ 		//proxy module is live in host, can send data to it.
++ 
++ 		generate_random_uuid((unsigned char *)&lxc_uio_uuid);		
++ 		
++ 		lxc_uio_nsproxy=lxc_uio_nsproxy_deep_copy(current->nsproxy); //deep copy since task struct of insmod will be destroyed soon
++ 
++ 		if(lxc_uio_nsproxy==NULL){
++ 			//error in deep copy
++ 			printk(KERN_ALERT"[lxc-uio] Error in lxc_uio_nsproxy_deep_copy()\n");
++ 			goto sysfs_cleanup;
++ 		}
++ 
++ 		lxc_uio_module=mod;
++ 		if(lxc_uio_proxy_put_module(lxc_uio_uuid,lxc_uio_nsproxy,lxc_uio_module)<0){
++ 			//Error
++ 			printk(KERN_ALERT"Error doing lxc_uio_put_module() \n");
++ 			goto sysfs_cleanup;
++ 		}
++ 
++ 		}
++ 		else{
++ 			printk(KERN_ALERT"[lxc-uio] Error - Either %s module not loaded in the host or the module hasn't set pointer to lxc_uio_proxy_put_module(). Can't insmod without it. status: [lxc_uio_proxy module loaded? [%s]] , [pointer to lxc_uio_proxy_put_module() set? [%s]]  \n",CONFIG_LXC_UIO_PROXY_MODULE_NAME,(lxc_uio_flag==true)?"True":"False",(lxc_uio_proxy_put_module==NULL)?"False":"True");
++ 		goto sysfs_cleanup;
++ 		}
++ 
++ 		 return 0; 
++ 	}
++ #endif
++ /*[sahil] test code - should be removed soon after*/
++ printk(KERN_ALERT"[sahil] sizeof(struct mod_tree_node) : %lu stack-pointer[%p]\n",sizeof(struct mod_tree_node ),current->stack);
+  	return do_init_module(mod);
+  
+   sysfs_cleanup:
+***************
+*** 3681,3687 ****
+  {
+  	int err;
+  	struct load_info info = { };
+- 
+  	err = may_init_module();
+  	if (err)
+  		return err;
+--- 3844,3849 ----
+***************
+*** 3692,3697 ****
+--- 3854,3862 ----
+  	err = copy_module_from_user(umod, len, &info);
+  	if (err)
+  		return err;
++ #ifdef LXC_UIO_DEBUG
++ 	printk(KERN_DEBUG"[lxc-uio]: init_module called, wasn't expecting this \n"); /*sahil*/
++ #endif
+  
+  	return load_module(&info, uargs, 0);
+  }
+***************
+*** 3703,3717 ****
+  	void *hdr;
+  	int err;
+  
+  	err = may_init_module();
+! 	if (err)
+! 		return err;
+  
+  	pr_debug("finit_module: fd=%d, uargs=%p, flags=%i\n", fd, uargs, flags);
+  
+  	if (flags & ~(MODULE_INIT_IGNORE_MODVERSIONS
+! 		      |MODULE_INIT_IGNORE_VERMAGIC))
+  		return -EINVAL;
+  
+  	err = kernel_read_file_from_fd(fd, &hdr, &size, INT_MAX,
+  				       READING_MODULE);
+--- 3868,3930 ----
+  	void *hdr;
+  	int err;
+  
++ 
+  	err = may_init_module();
+! 
+! #ifdef CONFIG_LXC_UIO
+! /*sahil*/
+! 	if(flags & MODULE_INIT_LXC){
+! 	/* if module is being installed 
+! 	from container, using -c option 
+! 	(i.e. with flag MODULE_INIT_LXC) 
+! 	then don't worry about capability,
+! 	only check for modules_disabled.
+! 	
+! 	WARN: will only work with modified 
+! 	version of insmod (which sets the 
+! 	flag when insmod is being done 
+! 	from container), not if nsproxy 
+! 	is being used to determine that 
+! 	insmod is being done from a container.
+! 	*/
+! 
+! 	if(modules_disabled){
+! #ifdef LXC_UIO_DEBUG
+! 	printk(KERN_DEBUG"[lxc-uio]: Modules are disabled (modules_disabled), wasn't expecting this \n"); /*sahil*/
+! #endif
+! 		return -EPERM;
+! 				}
+! 
+! //	if(!capable(task_cred_xxx(current,user_ns),CAP_SYS_ADMIN)){//from nsproxy.c:243
+!  if(!capable(CAP_SYS_ADMIN)){
+! /*Module loading doesn't require CAP_SYS_ADMIN but we still require it since we are using copy_namespace() function in our code, and that requires the permission. It is better to fail here with a suitable message, rather than later when a lot of work gets done*/
+! 
+! printk(KERN_ALERT"[lxc-uio] Error. CAP_SYS_ADMIN not present. Run with sudo.\n");
+! return -1;
+! }
+! 		
+! 	err=0; 
+! 	}
+! #endif 
+! 
+! 	if (err){
+! 
+! 		return err;}
+  
+  	pr_debug("finit_module: fd=%d, uargs=%p, flags=%i\n", fd, uargs, flags);
+  
+  	if (flags & ~(MODULE_INIT_IGNORE_MODVERSIONS
+! 		      |MODULE_INIT_IGNORE_VERMAGIC
+! #ifdef CONFIG_LXC_UIO
+! 			|MODULE_INIT_LXC /*sahil - this flag means that the module is coming from an LXC TODO: verify usign nsproxy?*/
+! #endif
+! 			))
+  		return -EINVAL;
++ #ifdef CONFIG_LXC_UIO_DEBUG
++ 	if(flags & MODULE_INIT_LXC){
++ 		printk(KERN_DEBUG"[lxc-uio]: Module being installed from a container\n"); /*sahil*/
++ 	}
++ #endif
+  
+  	err = kernel_read_file_from_fd(fd, &hdr, &size, INT_MAX,
+  				       READING_MODULE);

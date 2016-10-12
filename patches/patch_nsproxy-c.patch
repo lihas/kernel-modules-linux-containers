@@ -1,0 +1,97 @@
+*** ../linux-4.7.3_unmodified/kernel/nsproxy.c	2016-09-07 12:05:12.000000000 +0530
+--- kernel/nsproxy.c	2016-10-12 12:23:53.062651341 +0530
+***************
+*** 130,135 ****
+--- 130,221 ----
+  	return ERR_PTR(err);
+  }
+  
++ #ifdef CONFIG_LXC_UIO
++ 
++ /*sahil*/
++ /*
++ copy of create_new_namespace, since that function is defined as static, and will not be visible outside this file.
++ */
++ #ifdef CONFIG_LXC_UIO_NO_OPTIMIZE
++ struct nsproxy * __attribute__((optimize("O0"))) lxc_uio_create_new_namespaces(unsigned long flags,
++ 	struct task_struct *tsk, struct user_namespace *user_ns,
++ 	struct fs_struct *new_fs)
++ #else
++ struct nsproxy *lxc_uio_create_new_namespaces(unsigned long flags,
++ 	struct task_struct *tsk, struct user_namespace *user_ns,
++ 	struct fs_struct *new_fs)
++ #endif
++ {
++ 	struct nsproxy *new_nsp;
++ 	int err;
++ 
++ 	new_nsp = create_nsproxy();
++ 	if (!new_nsp){
++ 		return ERR_PTR(-ENOMEM);
++ }
++ 
++ 	new_nsp->mnt_ns = copy_mnt_ns(flags, tsk->nsproxy->mnt_ns, user_ns, new_fs);
++ 	if (IS_ERR(new_nsp->mnt_ns)) {
++ 		err = PTR_ERR(new_nsp->mnt_ns);
++ 		goto out_ns;
++ 	}
++ 
++ 	new_nsp->uts_ns = copy_utsname(flags, user_ns, tsk->nsproxy->uts_ns);
++ 	if (IS_ERR(new_nsp->uts_ns)) {
++ 
++ 		err = PTR_ERR(new_nsp->uts_ns);
++ 		goto out_uts;
++ 	}
++ 
++ 	new_nsp->ipc_ns = copy_ipcs(flags, user_ns, tsk->nsproxy->ipc_ns);
++ 	if (IS_ERR(new_nsp->ipc_ns)) {
++ 		err = PTR_ERR(new_nsp->ipc_ns);
++ 		goto out_ipc;
++ 	}
++ 
++ 	new_nsp->pid_ns_for_children =
++ 		copy_pid_ns(flags, user_ns, tsk->nsproxy->pid_ns_for_children);
++ 	if (IS_ERR(new_nsp->pid_ns_for_children)) {
++ 		err = PTR_ERR(new_nsp->pid_ns_for_children);
++ 		goto out_pid;
++ 	}
++ 
++ 	new_nsp->cgroup_ns = copy_cgroup_ns(flags, user_ns,
++ 					    tsk->nsproxy->cgroup_ns);
++ 	if (IS_ERR(new_nsp->cgroup_ns)) {
++ 		err = PTR_ERR(new_nsp->cgroup_ns);
++ 		goto out_cgroup;
++ 	}
++ 
++ 	new_nsp->net_ns = copy_net_ns(flags, user_ns, tsk->nsproxy->net_ns);
++ 	if (IS_ERR(new_nsp->net_ns)) {
++ 		err = PTR_ERR(new_nsp->net_ns);
++ 		goto out_net;
++ 	}
++ 
++ 	return new_nsp;
++ 
++ out_net:
++ 	put_cgroup_ns(new_nsp->cgroup_ns);
++ out_cgroup:
++ 	if (new_nsp->pid_ns_for_children)
++ 		put_pid_ns(new_nsp->pid_ns_for_children);
++ out_pid:
++ 	if (new_nsp->ipc_ns)
++ 		put_ipc_ns(new_nsp->ipc_ns);
++ out_ipc:
++ 	if (new_nsp->uts_ns)
++ 		put_uts_ns(new_nsp->uts_ns);
++ out_uts:
++ 	if (new_nsp->mnt_ns)
++ 		put_mnt_ns(new_nsp->mnt_ns);
++ out_ns:
++ 	kmem_cache_free(nsproxy_cachep, new_nsp);
++ 	return ERR_PTR(err);
++ }
++ 
++ #endif
++ 
+  /*
+   * called from clone.  This now handles copy for nsproxy and all
+   * namespaces therein.

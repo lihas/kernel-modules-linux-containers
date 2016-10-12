@@ -1,0 +1,17 @@
+*** ../linux-4.7.3_unmodified/include/uapi/linux/module.h	2016-09-07 12:05:12.000000000 +0530
+--- include/uapi/linux/module.h	2016-09-10 23:29:26.269440512 +0530
+***************
+*** 4,8 ****
+  /* Flags for sys_finit_module: */
+  #define MODULE_INIT_IGNORE_MODVERSIONS	1
+  #define MODULE_INIT_IGNORE_VERMAGIC	2
+! 
+  #endif /* _UAPI_LINUX_MODULE_H */
+--- 4,10 ----
+  /* Flags for sys_finit_module: */
+  #define MODULE_INIT_IGNORE_MODVERSIONS	1
+  #define MODULE_INIT_IGNORE_VERMAGIC	2
+! #ifdef CONFIG_LXC_UIO
+! #define MODULE_INIT_LXC 0x1000000 /*sahil*/
+! #endif
+  #endif /* _UAPI_LINUX_MODULE_H */

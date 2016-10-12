@@ -1,0 +1,24 @@
+[36m[lxc-uio] INFO: KVM extension version 1
+[0m
+[36m[lxc-uio] INFO: server registered to proxy module[0m
+[36m[lxc-uio] INFO: no new entry present in proxy module[0m
+[36m[lxc-uio] INFO: process_entry() - table empty[0m
+[36m[lxc-uio] INFO: waiting for new events ...[0m
+[36m[lxc-uio] INFO: eventfd event received[0m
+[36m[lxc-uio] INFO: new entry : uuid received [b241dcede12c758f-61c153a56a3d6383][0m
+[36m[lxc-uio] INFO: memory initialized[0m
+[36m[lxc-uio] INFO: module binary copied to new user space[0m
+[31m[lxc-uio] ERROR: unhandled KVM_EXIT_IO file-name[kvm-host-server.c] line-number[626][0m
+backtrace: 4 frames 
+1: 0x405f3b ./kvm-host-server(process_entry+0x1f5a) [0x405f3b]
+2: 0x403a86 ./kvm-host-server(main+0x982) [0x403a86]
+3: 0x7fe9bac17830 /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xf0) [0x7fe9bac17830]
+4: 0x401619 ./kvm-host-server(_start+0x29) [0x401619]
+
+[31m[lxc-uio] ERROR: process_entry() error. ret_val[-1] file-name[kvm-host-server.c] line-number[233][0m
+backtrace: 3 frames 
+1: 0x403bbd ./kvm-host-server(main+0xab9) [0x403bbd]
+2: 0x7fe9bac17830 /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xf0) [0x7fe9bac17830]
+3: 0x401619 ./kvm-host-server(_start+0x29) [0x401619]
+
+[36m[lxc-uio] INFO: server successfully deregistered[0m
