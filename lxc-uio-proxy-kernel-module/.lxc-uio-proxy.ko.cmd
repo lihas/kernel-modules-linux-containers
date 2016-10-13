@@ -1,1 +1,0 @@
-cmd_/neo-SSD/stage2-documenting/lxc-uio-proxy-kernel-module/lxc-uio-proxy.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /neo-SSD/stage2-documenting/lxc-uio-proxy-kernel-module/lxc-uio-proxy.ko /neo-SSD/stage2-documenting/lxc-uio-proxy-kernel-module/lxc-uio-proxy.o /neo-SSD/stage2-documenting/lxc-uio-proxy-kernel-module/lxc-uio-proxy.mod.o
